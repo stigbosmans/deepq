@@ -67,7 +67,7 @@ class Net(nn.Module):
 
 def train_net(net):
     memory_size = len(replay_memory)
-    batch_size = 5
+    batch_size = 20
     idxs = np.random.choice(np.arange(memory_size), size=batch_size)
     samples = np.array([[replay_memory[i][j] for j in range(4)] for i in idxs])
     states = samples[:, 0]
