@@ -7,7 +7,7 @@ import numpy as np
 env = gym.make('CartPole-v1')
 env.reset()
 
-episodes = 10
+episodes = 10000
 max_steps = 200
 
 gamma = 0.99
@@ -27,11 +27,10 @@ replay_memory = deque(maxlen=10000)
 def learn():
     global epsilon
     net = Net()
-    print(np.array([1,2,3,4]).shape)
     i = torch.from_numpy(np.random.randn(1, observation_space_size)).float()
-    episode_reward = 0
     for e in range(episodes):
         state = env.reset()
+        episode_reward = 0
         for s in range(max_steps):
             if np.random.random() < epsilon:
                 action = env.action_space.sample()
@@ -47,6 +46,8 @@ def learn():
             episode_reward += reward
             state = next_state
         print('finished', s)
+        #print('Episode reward', episode_reward)
+        train_net(net)
     env.close()
 
 
@@ -55,7 +56,7 @@ class Net(nn.Module):
         super(Net, self).__init__()
         self.fc1 = nn.Linear(observation_space_size, 128)
         self.fc2 = nn.Linear(128, 128)
-        self.fc3 = nn.Linear(128, action_space_size)
+        self.fc3 = nn.Linear(128, 2)
 
     def forward(self, x):
         x = F.relu(self.fc1(x))
@@ -66,10 +67,28 @@ class Net(nn.Module):
 
 def train_net(net):
     memory_size = len(replay_memory)
-    idxs = np.random.choice(np.arange(memory_size), size=memory_size)
-    samples = np.array([replay_memory[i] for i in idxs])
+    batch_size = 5
+    idxs = np.random.choice(np.arange(memory_size), size=batch_size)
+    samples = np.array([[replay_memory[i][j] for j in range(4)] for i in idxs])
     states = samples[:, 0]
-    actions = net.forward(torch.from_numpy(states).float())
+    states = np.array([[states[i][j] for j in range(observation_space_size)] for i in range(batch_size)])
+    rewards = samples[:, 3].astype('float32')
+    rewards = torch.from_numpy(rewards).float()
+    next_states = samples[:, 2]
+    next_states = np.array([[next_states[i][j] for j in range(observation_space_size)] for i in range(batch_size)])
+    actions = samples[:, 1].astype('int32')
+    state_q_vals = net.forward(torch.from_numpy(states).float())
+    state_q_vals = state_q_vals[range(batch_size), actions]
+    next_state_q_vals = net.forward(torch.from_numpy(next_states).float())
+    next_state_q_vals, _ = next_state_q_vals.max(1)
+
+    loss = torch.sum(lr * ((rewards + gamma * next_state_q_vals) -  state_q_vals))
+    # print("Loss", loss)
+    learning_rate = 1e-4
+    optimizer = torch.optim.Adam(net.parameters(), lr=learning_rate)
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
 
 
 learn()
