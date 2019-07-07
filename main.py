@@ -4,6 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from collections import deque
 import numpy as np
+from matplotlib import pyplot
 env = gym.make('CartPole-v1')
 env.reset()
 
@@ -21,12 +22,15 @@ batch_size = 24
 action_space_size = env.action_space.n
 observation_space_size = env.observation_space.shape[0]
 episode_rewards = []
+losses = []
 replay_memory = deque(maxlen=10000)
 
+learning_rate = 1e-4
 
 def learn():
     global epsilon
     net = Net()
+    optimizer = torch.optim.Adam(net.parameters(), lr=learning_rate)
     i = torch.from_numpy(np.random.randn(1, observation_space_size)).float()
     for e in range(episodes):
         state = env.reset()
@@ -39,15 +43,26 @@ def learn():
                 with torch.no_grad():
                     action = np.argmax(net.forward(x).numpy())
             next_state, reward, done, info = env.step(action)
-            replay_memory.append((state, action, next_state, reward))
             if done:
+                reward = -reward
                 break
+            replay_memory.append((state, action, next_state, reward))
             epsilon = epsilon_min + (epsilon_max - epsilon_min) * np.exp(-epsilon_decay * e)
             episode_reward += reward
             state = next_state
-        print('finished', s)
+            loss = train_net(net, optimizer)
+        #print('finished', s)
+        episode_rewards.append(episode_reward)
+        losses.append(loss)
+        if e % 1000 == 0:
+            print(e)
+            pyplot.subplot(1, 2, 1)
+            pyplot.plot(losses)
+            pyplot.subplot(1, 2, 2)
+            pyplot.plot(episode_rewards)
+            pyplot.show()
         #print('Episode reward', episode_reward)
-        train_net(net)
+
     env.close()
 
 
@@ -65,7 +80,7 @@ class Net(nn.Module):
         return x
 
 
-def train_net(net):
+def train_net(net, optimizer):
     memory_size = len(replay_memory)
     batch_size = 20
     idxs = np.random.choice(np.arange(memory_size), size=batch_size)
@@ -82,13 +97,13 @@ def train_net(net):
     next_state_q_vals = net.forward(torch.from_numpy(next_states).float())
     next_state_q_vals, _ = next_state_q_vals.max(1)
 
-    loss = torch.sum(lr * ((rewards + gamma * next_state_q_vals) -  state_q_vals))
-    # print("Loss", loss)
-    learning_rate = 1e-4
-    optimizer = torch.optim.Adam(net.parameters(), lr=learning_rate)
+    loss = torch.sum(lr * ((rewards + gamma * next_state_q_vals) -  state_q_vals)) / batch_size
+    #print("Loss", loss)
+
     optimizer.zero_grad()
     loss.backward()
     optimizer.step()
+    return loss
 
 
 learn()
